@@ -1,4 +1,5 @@
 #include "board.h"
+#include "bitops.h"
 
 #include <cassert>
 #include <cstring>
@@ -110,7 +111,7 @@ static std::array<uint64_t, 64> knightAttacks;
 static std::array<uint64_t, 64> kingAttacks;
 
 static int pop_lsb(uint64_t& b) {
-    int sq = __builtin_ctzll(b);
+    int sq = ctz64(b);
     b &= b - 1;
     return sq;
 }
@@ -249,18 +250,6 @@ static uint64_t random_uint64() {
 
 
 
-unsigned int popcount64(unsigned long long x) {
-    unsigned int count = 0;
-    while (x) {
-        count += x & 1;
-        x >>= 1;
-    }
-    return count;
-}
-
-static int popcount(uint64_t b) {
-    return popcount64(b);
-}
 
 static uint64_t knight_mask(int sq) {
     int r = sq / 8, f = sq % 8;
@@ -333,7 +322,7 @@ static void init_magic_array(bool bishop, std::array<Magic,64>& magics) {
     for (int sq=0; sq<64; ++sq) {
         Magic m{};
         m.mask = bishop ? bishop_mask(sq) : rook_mask(sq);
-        int bits = popcount(m.mask);
+        int bits = popcount64(m.mask);
         m.shift = 64 - bits;
         size_t size = 1ULL << bits;
         m.attacks.assign(size, 0);
@@ -352,7 +341,7 @@ static void init_magic_array(bool bishop, std::array<Magic,64>& magics) {
         for(int k=0;k<100000 && !found;++k){
             uint64_t magic=random_uint64()&random_uint64()&random_uint64();
 
-            if(popcount((magic*m.mask)>>56)<6) continue;
+            if(popcount64((magic*m.mask)>>56) < 6) continue;
             std::vector<uint64_t> used(size, 0xFFFFFFFFFFFFFFFFULL);
             bool fail=false;
             for(size_t i=0;i<size && !fail;++i){

@@ -1,4 +1,5 @@
 #include "uci.h"
+#include "bitops.h"
 #include <algorithm>
 #include <cctype>
 
@@ -37,7 +38,7 @@ static int evaluate(const Board& b) {
     static const int val[PIECE_NB] = {100,320,330,500,900,0,-100,-320,-330,-500,-900,0};
     int score = 0;
     for(int p=WP; p<PIECE_NB; ++p) {
-        score += __builtin_popcountll(b.pieceBB((Piece)p)) * val[p];
+        score += popcount64(b.pieceBB((Piece)p)) * val[p];
     }
     return (b.side_to_move()==WHITE?1:-1)*score;
 }
