@@ -34,6 +34,8 @@ Board::Board() {
     bitboards.fill(0);
     occupancies.fill(0);
     side = WHITE;
+    castling = 0;
+    ep_square = -1;
 }
 
 void Board::update_occupancies() {
@@ -48,10 +50,12 @@ bool Board::loadFEN(const std::string& fen) {
     bitboards.fill(0);
     occupancies.fill(0);
     side = WHITE;
+    castling = 0;
+    ep_square = -1;
 
     std::istringstream iss(fen);
-    std::string boardPart, sidePart, castling, ep;
-    if (!(iss >> boardPart >> sidePart >> castling >> ep))
+    std::string boardPart, sidePart, castlingPart, ep;
+    if (!(iss >> boardPart >> sidePart >> castlingPart >> ep))
         return false;
 
     int sq = 56; // start from A8
@@ -69,6 +73,18 @@ bool Board::loadFEN(const std::string& fen) {
     }
 
     side = (sidePart == "w" ? WHITE : BLACK);
+
+    castling = 0;
+    if (castlingPart.find('K') != std::string::npos) castling |= 1;
+    if (castlingPart.find('Q') != std::string::npos) castling |= 2;
+    if (castlingPart.find('k') != std::string::npos) castling |= 4;
+    if (castlingPart.find('q') != std::string::npos) castling |= 8;
+
+    if (ep != "-") {
+        ep_square = (ep[1]-'1')*8 + (ep[0]-'a');
+    } else {
+        ep_square = -1;
+    }
 
     occupancies[WHITE] = bitboards[WP] | bitboards[WN] | bitboards[WB] |
                          bitboards[WR] | bitboards[WQ] | bitboards[WK];
@@ -102,7 +118,22 @@ std::string Board::getFEN() const {
         if (rank > 0) s += '/';
     }
     s += side == WHITE ? " w" : " b";
-    s += " - - 0 1"; // stub
+    std::string cast;
+    if (castling & 1) cast += 'K';
+    if (castling & 2) cast += 'Q';
+    if (castling & 4) cast += 'k';
+    if (castling & 8) cast += 'q';
+    if (cast.empty()) cast = "-";
+    s += " " + cast;
+    if (ep_square != -1) {
+        std::string ep(2,'a');
+        ep[0]='a'+(ep_square%8);
+        ep[1]='1'+(ep_square/8);
+        s += " " + ep;
+    } else {
+        s += " -";
+    }
+    s += " 0 1"; // stub
     return s;
 }
 
@@ -132,7 +163,7 @@ std::vector<Board::Move> Board::generate_moves() const {
                 Piece cap = PIECE_NB;
                 if (opp & (1ULL<<to))
                     for (int pc=WP; pc<PIECE_NB; ++pc) if (bitboards[pc] & (1ULL<<to)) cap=(Piece)pc;
-                moves.push_back({from,to,p,cap});
+                moves.push_back({from,to,p,cap,PIECE_NB,false,false});
             }
         }
     };
@@ -150,7 +181,7 @@ std::vector<Board::Move> Board::generate_moves() const {
                 Piece cap = PIECE_NB;
                 if (opp & (1ULL<<to))
                     for (int pc=WP; pc<PIECE_NB; ++pc) if (bitboards[pc] & (1ULL<<to)) cap=(Piece)pc;
-                moves.push_back({from,to,p,cap});
+                moves.push_back({from,to,p,cap,PIECE_NB,false,false});
             }
         }
     };
@@ -162,7 +193,17 @@ std::vector<Board::Move> Board::generate_moves() const {
         while (t) {
             int to = pop_lsb(t);
             int from = to - 8;
-            moves.push_back({from,to,WP,PIECE_NB});
+            if (to >= 56)
+                moves.push_back({from,to,WP,PIECE_NB,WQ,false,false});
+            else
+                moves.push_back({from,to,WP,PIECE_NB,PIECE_NB,false,false});
+        }
+        uint64_t dbl = ((single & 0x0000000000FF0000ULL) << 8) & ~occupancies[2];
+        t = dbl;
+        while (t) {
+            int to = pop_lsb(t);
+            int from = to - 16;
+            moves.push_back({from,to,WP,PIECE_NB,PIECE_NB,false,false});
         }
         uint64_t captL = (pawns << 7) & ~0x0101010101010101ULL & opp;
         t = captL;
@@ -170,7 +211,10 @@ std::vector<Board::Move> Board::generate_moves() const {
             int to = pop_lsb(t);
             int from = to - 7;
             Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
-            moves.push_back({from,to,WP,cap});
+            if (to >= 56)
+                moves.push_back({from,to,WP,cap,WQ,false,false});
+            else
+                moves.push_back({from,to,WP,cap,PIECE_NB,false,false});
         }
         uint64_t captR = (pawns << 9) & ~0x8080808080808080ULL & opp;
         t = captR;
@@ -178,8 +222,32 @@ std::vector<Board::Move> Board::generate_moves() const {
             int to = pop_lsb(t);
             int from = to - 9;
             Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
-            moves.push_back({from,to,WP,cap});
+            if (to >= 56)
+                moves.push_back({from,to,WP,cap,WQ,false,false});
+            else
+                moves.push_back({from,to,WP,cap,PIECE_NB,false,false});
         }
+        if (ep_square != -1) {
+            uint64_t epBB = 1ULL << ep_square;
+            uint64_t epL = (pawns << 7) & ~0x0101010101010101ULL & epBB;
+            t = epL;
+            while (t) {
+                int to = pop_lsb(t);
+                int from = to - 7;
+                moves.push_back({from,to,WP,BP,PIECE_NB,true,false});
+            }
+            uint64_t epR = (pawns << 9) & ~0x8080808080808080ULL & epBB;
+            t = epR;
+            while (t) {
+                int to = pop_lsb(t);
+                int from = to - 9;
+                moves.push_back({from,to,WP,BP,PIECE_NB,true,false});
+            }
+        }
+        if ((castling & 1) && !(occupancies[2] & ((1ULL<<5)|(1ULL<<6))))
+            moves.push_back({4,6,WK,PIECE_NB,PIECE_NB,false,true});
+        if ((castling & 2) && !(occupancies[2] & ((1ULL<<1)|(1ULL<<2)|(1ULL<<3))))
+            moves.push_back({4,2,WK,PIECE_NB,PIECE_NB,false,true});
         add_leaper(WN, knightAttacks);
         add_slider(WB, true);
         add_slider(WR, false);
@@ -193,7 +261,17 @@ std::vector<Board::Move> Board::generate_moves() const {
         while (t) {
             int to = pop_lsb(t);
             int from = to + 8;
-            moves.push_back({from,to,BP,PIECE_NB});
+            if (to < 8)
+                moves.push_back({from,to,BP,PIECE_NB,BQ,false,false});
+            else
+                moves.push_back({from,to,BP,PIECE_NB,PIECE_NB,false,false});
+        }
+        uint64_t dbl = ((single & 0x0000FF0000000000ULL) >> 8) & ~occupancies[2];
+        t = dbl;
+        while (t) {
+            int to = pop_lsb(t);
+            int from = to + 16;
+            moves.push_back({from,to,BP,PIECE_NB,PIECE_NB,false,false});
         }
         uint64_t captL = (pawns >> 7) & ~0x8080808080808080ULL & opp;
         t = captL;
@@ -201,7 +279,10 @@ std::vector<Board::Move> Board::generate_moves() const {
             int to = pop_lsb(t);
             int from = to + 7;
             Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
-            moves.push_back({from,to,BP,cap});
+            if (to < 8)
+                moves.push_back({from,to,BP,cap,BQ,false,false});
+            else
+                moves.push_back({from,to,BP,cap,PIECE_NB,false,false});
         }
         uint64_t captR = (pawns >> 9) & ~0x0101010101010101ULL & opp;
         t = captR;
@@ -209,8 +290,32 @@ std::vector<Board::Move> Board::generate_moves() const {
             int to = pop_lsb(t);
             int from = to + 9;
             Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
-            moves.push_back({from,to,BP,cap});
+            if (to < 8)
+                moves.push_back({from,to,BP,cap,BQ,false,false});
+            else
+                moves.push_back({from,to,BP,cap,PIECE_NB,false,false});
         }
+        if (ep_square != -1) {
+            uint64_t epBB = 1ULL << ep_square;
+            uint64_t epL = (pawns >> 7) & ~0x8080808080808080ULL & epBB;
+            t = epL;
+            while (t) {
+                int to = pop_lsb(t);
+                int from = to + 7;
+                moves.push_back({from,to,BP,WP,PIECE_NB,true,false});
+            }
+            uint64_t epR = (pawns >> 9) & ~0x0101010101010101ULL & epBB;
+            t = epR;
+            while (t) {
+                int to = pop_lsb(t);
+                int from = to + 9;
+                moves.push_back({from,to,BP,WP,PIECE_NB,true,false});
+            }
+        }
+        if ((castling & 4) && !(occupancies[2] & ((1ULL<<61)|(1ULL<<62))))
+            moves.push_back({60,62,BK,PIECE_NB,PIECE_NB,false,true});
+        if ((castling & 8) && !(occupancies[2] & ((1ULL<<57)|(1ULL<<58)|(1ULL<<59))))
+            moves.push_back({60,58,BK,PIECE_NB,PIECE_NB,false,true});
         add_leaper(BN, knightAttacks);
         add_slider(BB, true);
         add_slider(BR, false);
@@ -230,8 +335,37 @@ bool Board::make_move(const Move& m) {
     uint64_t toBB = 1ULL << m.to;
     bitboards[m.piece] &= ~fromBB;
     bitboards[m.piece] |= toBB;
-    if (m.capture != PIECE_NB)
+    if (m.is_castling) {
+        if (m.to == 6) { bitboards[WR] &= ~(1ULL<<7); bitboards[WR] |= (1ULL<<5); }
+        else if (m.to == 2) { bitboards[WR] &= ~(1ULL<<0); bitboards[WR] |= (1ULL<<3); }
+        else if (m.to == 62) { bitboards[BR] &= ~(1ULL<<63); bitboards[BR] |= (1ULL<<61); }
+        else if (m.to == 58) { bitboards[BR] &= ~(1ULL<<56); bitboards[BR] |= (1ULL<<59); }
+    }
+    if (m.is_ep) {
+        if (m.piece == WP) bitboards[BP] &= ~(toBB >> 8);
+        else bitboards[WP] &= ~(toBB << 8);
+    } else if (m.capture != PIECE_NB) {
         bitboards[m.capture] &= ~toBB;
+    }
+    if (m.promotion != PIECE_NB) {
+        bitboards[m.piece] &= ~toBB;
+        bitboards[m.promotion] |= toBB;
+    }
+
+    if (m.piece == WK) castling &= ~3;
+    if (m.piece == BK) castling &= ~12;
+    if (m.piece == WR && m.from == 0) castling &= ~2;
+    if (m.piece == WR && m.from == 7) castling &= ~1;
+    if (m.piece == BR && m.from == 56) castling &= ~8;
+    if (m.piece == BR && m.from == 63) castling &= ~4;
+    if (m.capture == WR && m.to == 0) castling &= ~2;
+    if (m.capture == WR && m.to == 7) castling &= ~1;
+    if (m.capture == BR && m.to == 56) castling &= ~8;
+    if (m.capture == BR && m.to == 63) castling &= ~4;
+
+    if (m.piece == WP && m.to - m.from == 16) ep_square = m.from + 8;
+    else if (m.piece == BP && m.from - m.to == 16) ep_square = m.from - 8;
+    else ep_square = -1;
     update_occupancies();
     side = (side == WHITE ? BLACK : WHITE);
     return true;
