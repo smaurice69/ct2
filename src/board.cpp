@@ -35,6 +35,14 @@ Board::Board() {
     side = WHITE;
 }
 
+void Board::update_occupancies() {
+    occupancies[WHITE] = bitboards[WP] | bitboards[WN] | bitboards[WB] |
+                         bitboards[WR] | bitboards[WQ] | bitboards[WK];
+    occupancies[BLACK] = bitboards[BP] | bitboards[BN] | bitboards[BB] |
+                         bitboards[BR] | bitboards[BQ] | bitboards[BK];
+    occupancies[2] = occupancies[WHITE] | occupancies[BLACK];
+}
+
 bool Board::loadFEN(const std::string& fen) {
     bitboards.fill(0);
     occupancies.fill(0);
@@ -97,6 +105,137 @@ std::string Board::getFEN() const {
     return s;
 }
 
+// ================= Move generation =====================
+static std::array<uint64_t, 64> knightAttacks;
+static std::array<uint64_t, 64> kingAttacks;
+
+static int pop_lsb(uint64_t& b) {
+    int sq = __builtin_ctzll(b);
+    b &= b - 1;
+    return sq;
+}
+
+std::vector<Board::Move> Board::generate_moves() const {
+    std::vector<Move> moves;
+    uint64_t own = occupancies[side];
+    uint64_t opp = occupancies[side ^ 1];
+
+    auto add_leaper = [&](Piece p, const std::array<uint64_t,64>& table) {
+        uint64_t bb = bitboards[p];
+        while (bb) {
+            int from = pop_lsb(bb);
+            uint64_t targets = table[from] & ~own;
+            uint64_t t = targets;
+            while (t) {
+                int to = pop_lsb(t);
+                Piece cap = PIECE_NB;
+                if (opp & (1ULL<<to))
+                    for (int pc=WP; pc<PIECE_NB; ++pc) if (bitboards[pc] & (1ULL<<to)) cap=(Piece)pc;
+                moves.push_back({from,to,p,cap});
+            }
+        }
+    };
+
+    auto add_slider = [&](Piece p, bool bishopLike) {
+        uint64_t bb = bitboards[p];
+        while (bb) {
+            int from = pop_lsb(bb);
+            uint64_t targets = bishopLike ? bishop_attacks(from, occupancies[2])
+                                         : rook_attacks(from, occupancies[2]);
+            targets &= ~own;
+            uint64_t t = targets;
+            while (t) {
+                int to = pop_lsb(t);
+                Piece cap = PIECE_NB;
+                if (opp & (1ULL<<to))
+                    for (int pc=WP; pc<PIECE_NB; ++pc) if (bitboards[pc] & (1ULL<<to)) cap=(Piece)pc;
+                moves.push_back({from,to,p,cap});
+            }
+        }
+    };
+
+    if (side == WHITE) {
+        uint64_t pawns = bitboards[WP];
+        uint64_t single = (pawns << 8) & ~occupancies[2];
+        uint64_t t = single;
+        while (t) {
+            int to = pop_lsb(t);
+            int from = to - 8;
+            moves.push_back({from,to,WP,PIECE_NB});
+        }
+        uint64_t captL = (pawns << 7) & ~0x0101010101010101ULL & opp;
+        t = captL;
+        while (t) {
+            int to = pop_lsb(t);
+            int from = to - 7;
+            Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
+            moves.push_back({from,to,WP,cap});
+        }
+        uint64_t captR = (pawns << 9) & ~0x8080808080808080ULL & opp;
+        t = captR;
+        while (t) {
+            int to = pop_lsb(t);
+            int from = to - 9;
+            Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
+            moves.push_back({from,to,WP,cap});
+        }
+        add_leaper(WN, knightAttacks);
+        add_slider(WB, true);
+        add_slider(WR, false);
+        add_slider(WQ, true);
+        add_slider(WQ, false);
+        add_leaper(WK, kingAttacks);
+    } else {
+        uint64_t pawns = bitboards[BP];
+        uint64_t single = (pawns >> 8) & ~occupancies[2];
+        uint64_t t = single;
+        while (t) {
+            int to = pop_lsb(t);
+            int from = to + 8;
+            moves.push_back({from,to,BP,PIECE_NB});
+        }
+        uint64_t captL = (pawns >> 7) & ~0x8080808080808080ULL & opp;
+        t = captL;
+        while (t) {
+            int to = pop_lsb(t);
+            int from = to + 7;
+            Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
+            moves.push_back({from,to,BP,cap});
+        }
+        uint64_t captR = (pawns >> 9) & ~0x0101010101010101ULL & opp;
+        t = captR;
+        while (t) {
+            int to = pop_lsb(t);
+            int from = to + 9;
+            Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
+            moves.push_back({from,to,BP,cap});
+        }
+        add_leaper(BN, knightAttacks);
+        add_slider(BB, true);
+        add_slider(BR, false);
+        add_slider(BQ, true);
+        add_slider(BQ, false);
+        add_leaper(BK, kingAttacks);
+    }
+
+    return moves;
+}
+
+bool Board::make_move(const Move& m) {
+    assert(m.piece >= 0 && m.piece < PIECE_NB);
+    assert(m.from >= 0 && m.from < 64);
+    assert(m.to >= 0 && m.to < 64);
+    uint64_t fromBB = 1ULL << m.from;
+    uint64_t toBB = 1ULL << m.to;
+    bitboards[m.piece] &= ~fromBB;
+    bitboards[m.piece] |= toBB;
+    if (m.capture != PIECE_NB)
+        bitboards[m.capture] &= ~toBB;
+    update_occupancies();
+    side = (side == WHITE ? BLACK : WHITE);
+    return true;
+}
+
 // ================= Magic bitboards =====================
 
 static std::array<Magic, 64> rookMagics;
@@ -121,6 +260,30 @@ unsigned int popcount64(unsigned long long x) {
 
 static int popcount(uint64_t b) {
     return popcount64(b);
+}
+
+static uint64_t knight_mask(int sq) {
+    int r = sq / 8, f = sq % 8;
+    const int offsets[8][2] = {{1,2},{2,1},{-1,2},{-2,1},{1,-2},{2,-1},{-1,-2},{-2,-1}};
+    uint64_t mask = 0;
+    for(auto& o : offsets){
+        int r1 = r + o[0];
+        int f1 = f + o[1];
+        if(r1>=0 && r1<8 && f1>=0 && f1<8) mask |= 1ULL << (r1*8+f1);
+    }
+    return mask;
+}
+
+static uint64_t king_mask(int sq) {
+    int r = sq / 8, f = sq % 8;
+    const int offsets[8][2] = {{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
+    uint64_t mask = 0;
+    for(auto& o : offsets){
+        int r1 = r + o[0];
+        int f1 = f + o[1];
+        if(r1>=0 && r1<8 && f1>=0 && f1<8) mask |= 1ULL << (r1*8+f1);
+    }
+    return mask;
 }
 
 static uint64_t rook_mask(int sq) {
@@ -235,6 +398,18 @@ uint64_t rook_attacks(int sq, uint64_t occ) {
     uint64_t idx = (occMask * m.magic) >> m.shift;
     if(idx < m.attacks.size()) return m.attacks[idx];
     return 0ULL;
+}
+
+static void init_leaper_attacks() {
+    for(int sq=0; sq<64; ++sq) {
+        knightAttacks[sq] = knight_mask(sq);
+        kingAttacks[sq] = king_mask(sq);
+    }
+}
+
+void init_tables() {
+    init_leaper_attacks();
+    init_magics();
 }
 
 } // namespace ct2
