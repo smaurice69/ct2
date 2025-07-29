@@ -1,4 +1,5 @@
 #include "board.h"
+#include "bitops.h"
 #include <gtest/gtest.h>
 
 using namespace ct2;
@@ -14,7 +15,7 @@ TEST(MagicTest, RookAttacks) {
     init_magics();
     uint64_t occ = 0;
     uint64_t attacks = rook_attacks(27, occ); // d4
-    EXPECT_EQ(__builtin_popcountll(attacks), 14);
+    EXPECT_EQ(popcount64(attacks), 14);
 }
 
 int main(int argc, char** argv) {
