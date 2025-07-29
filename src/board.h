@@ -29,18 +29,32 @@ public:
     bool loadFEN(const std::string& fen);
     std::string getFEN() const;
 
+    struct Move {
+        int from;
+        int to;
+        Piece piece;
+        Piece capture;
+    };
+
+    std::vector<Move> generate_moves() const;
+    bool make_move(const Move& m);
+
     uint64_t pieceBB(Piece p) const { return bitboards[p]; }
     uint64_t occupancyBB(Color c) const { return occupancies[c]; }
     uint64_t occupancyBB() const { return occupancies[2]; }
+    Color side_to_move() const { return side; }
 
 private:
     std::array<uint64_t, PIECE_NB> bitboards{};
     std::array<uint64_t, 3> occupancies{}; // white, black, both
     Color side;
+
+    void update_occupancies();
 };
 
 // Magic bitboard related
 void init_magics();
+void init_tables();
 uint64_t bishop_attacks(int sq, uint64_t occ);
 uint64_t rook_attacks(int sq, uint64_t occ);
 
