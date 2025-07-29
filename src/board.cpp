@@ -108,8 +108,19 @@ static uint64_t random_uint64() {
     return x;
 }
 
+
+
+unsigned int popcount64(unsigned long long x) {
+    unsigned int count = 0;
+    while (x) {
+        count += x & 1;
+        x >>= 1;
+    }
+    return count;
+}
+
 static int popcount(uint64_t b) {
-    return __builtin_popcountll(b);
+    return popcount64(b);
 }
 
 static uint64_t rook_mask(int sq) {
