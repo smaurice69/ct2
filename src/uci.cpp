@@ -27,11 +27,36 @@ static Board::Move parse_move(const std::string& m, const Board& b) {
     for(int p=WP;p<PIECE_NB;++p) if(b.pieceBB((Piece)p) & (1ULL<<mv.from)) mv.piece=(Piece)p;
     mv.capture = PIECE_NB;
     for(int p=WP;p<PIECE_NB;++p) if(b.pieceBB((Piece)p) & (1ULL<<mv.to)) mv.capture=(Piece)p;
+    mv.promotion = PIECE_NB;
+    mv.is_ep = false;
+    mv.is_castling = false;
+    if (m.size() > 4) {
+        char prom = m[4];
+        switch(prom) {
+            case 'q': case 'Q': mv.promotion = (mv.piece==WP?WQ:BQ); break;
+            case 'r': case 'R': mv.promotion = (mv.piece==WP?WR:BR); break;
+            case 'b': case 'B': mv.promotion = (mv.piece==WP?WB:BB); break;
+            case 'n': case 'N': mv.promotion = (mv.piece==WP?WN:BN); break;
+        }
+    }
     return mv;
 }
 
 static std::string move_to_str(const Board::Move& m) {
-    return sq_to_str(m.from) + sq_to_str(m.to);
+    std::string s = sq_to_str(m.from) + sq_to_str(m.to);
+    if (m.promotion != PIECE_NB) {
+        const char* promStr = "pnbrqkPNBRQK"; // not all used
+        char c='q';
+        switch(m.promotion) {
+            case WN: case BN: c='n'; break;
+            case WB: case BB: c='b'; break;
+            case WR: case BR: c='r'; break;
+            case WQ: case BQ: c='q'; break;
+            default: break;
+        }
+        s += c;
+    }
+    return s;
 }
 
 static int evaluate(const Board& b) {
@@ -45,7 +70,7 @@ static int evaluate(const Board& b) {
 
 static Board::Move search_best(Board& b) {
     auto moves = b.generate_moves();
-    if(moves.empty()) return Board::Move{0,0,WP,PIECE_NB};
+    if(moves.empty()) return Board::Move{0,0,WP,PIECE_NB,PIECE_NB,false,false};
     Board::Move best = moves[0];
     int bestScore = -1000000;
     for(const auto& mv : moves) {

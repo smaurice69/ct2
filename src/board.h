@@ -34,6 +34,9 @@ public:
         int to;
         Piece piece;
         Piece capture;
+        Piece promotion;
+        bool is_ep;
+        bool is_castling;
     };
 
     std::vector<Move> generate_moves() const;
@@ -48,6 +51,8 @@ private:
     std::array<uint64_t, PIECE_NB> bitboards{};
     std::array<uint64_t, 3> occupancies{}; // white, black, both
     Color side;
+    uint8_t castling; // KQkq = 1|2|4|8
+    int ep_square;    // -1 if none
 
     void update_occupancies();
 };
