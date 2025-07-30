@@ -205,7 +205,7 @@ std::vector<Board::Move> Board::generate_moves() const {
             int from = to - 16;
             moves.push_back({from,to,WP,PIECE_NB,PIECE_NB,false,false});
         }
-        uint64_t captL = (pawns << 7) & ~0x0101010101010101ULL & opp;
+        uint64_t captL = ((pawns & ~0x0101010101010101ULL) << 7) & opp;
         t = captL;
         while (t) {
             int to = pop_lsb(t);
@@ -216,7 +216,7 @@ std::vector<Board::Move> Board::generate_moves() const {
             else
                 moves.push_back({from,to,WP,cap,PIECE_NB,false,false});
         }
-        uint64_t captR = (pawns << 9) & ~0x8080808080808080ULL & opp;
+        uint64_t captR = ((pawns & ~0x8080808080808080ULL) << 9) & opp;
         t = captR;
         while (t) {
             int to = pop_lsb(t);
@@ -229,14 +229,14 @@ std::vector<Board::Move> Board::generate_moves() const {
         }
         if (ep_square != -1) {
             uint64_t epBB = 1ULL << ep_square;
-            uint64_t epL = (pawns << 7) & ~0x0101010101010101ULL & epBB;
+            uint64_t epL = ((pawns & ~0x0101010101010101ULL) << 7) & epBB;
             t = epL;
             while (t) {
                 int to = pop_lsb(t);
                 int from = to - 7;
                 moves.push_back({from,to,WP,BP,PIECE_NB,true,false});
             }
-            uint64_t epR = (pawns << 9) & ~0x8080808080808080ULL & epBB;
+            uint64_t epR = ((pawns & ~0x8080808080808080ULL) << 9) & epBB;
             t = epR;
             while (t) {
                 int to = pop_lsb(t);
@@ -273,7 +273,7 @@ std::vector<Board::Move> Board::generate_moves() const {
             int from = to + 16;
             moves.push_back({from,to,BP,PIECE_NB,PIECE_NB,false,false});
         }
-        uint64_t captL = (pawns >> 7) & ~0x8080808080808080ULL & opp;
+        uint64_t captL = ((pawns & ~0x0101010101010101ULL) >> 7) & opp;
         t = captL;
         while (t) {
             int to = pop_lsb(t);
@@ -284,7 +284,7 @@ std::vector<Board::Move> Board::generate_moves() const {
             else
                 moves.push_back({from,to,BP,cap,PIECE_NB,false,false});
         }
-        uint64_t captR = (pawns >> 9) & ~0x0101010101010101ULL & opp;
+        uint64_t captR = ((pawns & ~0x8080808080808080ULL) >> 9) & opp;
         t = captR;
         while (t) {
             int to = pop_lsb(t);
@@ -297,14 +297,14 @@ std::vector<Board::Move> Board::generate_moves() const {
         }
         if (ep_square != -1) {
             uint64_t epBB = 1ULL << ep_square;
-            uint64_t epL = (pawns >> 7) & ~0x8080808080808080ULL & epBB;
+            uint64_t epL = ((pawns & ~0x0101010101010101ULL) >> 7) & epBB;
             t = epL;
             while (t) {
                 int to = pop_lsb(t);
                 int from = to + 7;
                 moves.push_back({from,to,BP,WP,PIECE_NB,true,false});
             }
-            uint64_t epR = (pawns >> 9) & ~0x0101010101010101ULL & epBB;
+            uint64_t epR = ((pawns & ~0x8080808080808080ULL) >> 9) & epBB;
             t = epR;
             while (t) {
                 int to = pop_lsb(t);
@@ -369,6 +369,43 @@ bool Board::make_move(const Move& m) {
     update_occupancies();
     side = (side == WHITE ? BLACK : WHITE);
     return true;
+}
+
+bool Board::square_attacked(int sq, Color by) const {
+    uint64_t target = 1ULL << sq;
+    uint64_t occ = occupancies[2];
+    if (by == WHITE) {
+        if (((bitboards[WP] << 7) & ~0x0101010101010101ULL) & target) return true;
+        if (((bitboards[WP] << 9) & ~0x8080808080808080ULL) & target) return true;
+        if (knightAttacks[sq] & bitboards[WN]) return true;
+        if (bishop_attacks(sq, occ) & (bitboards[WB] | bitboards[WQ])) return true;
+        if (rook_attacks(sq, occ) & (bitboards[WR] | bitboards[WQ])) return true;
+        if (kingAttacks[sq] & bitboards[WK]) return true;
+    } else {
+        if (((bitboards[BP] >> 7) & ~0x8080808080808080ULL) & target) return true;
+        if (((bitboards[BP] >> 9) & ~0x0101010101010101ULL) & target) return true;
+        if (knightAttacks[sq] & bitboards[BN]) return true;
+        if (bishop_attacks(sq, occ) & (bitboards[BB] | bitboards[BQ])) return true;
+        if (rook_attacks(sq, occ) & (bitboards[BR] | bitboards[BQ])) return true;
+        if (kingAttacks[sq] & bitboards[BK]) return true;
+    }
+    return false;
+}
+
+bool Board::in_check(Color c) const {
+    int kingSq = c == WHITE ? ctz64(bitboards[WK]) : ctz64(bitboards[BK]);
+    return square_attacked(kingSq, c == WHITE ? BLACK : WHITE);
+}
+
+std::vector<Board::Move> Board::generate_legal_moves() const {
+    std::vector<Move> moves;
+    auto pseudo = generate_moves();
+    for (const auto& mv : pseudo) {
+        Board copy = *this;
+        copy.make_move(mv);
+        if (!copy.in_check(side)) moves.push_back(mv);
+    }
+    return moves;
 }
 
 // ================= Magic bitboards =====================

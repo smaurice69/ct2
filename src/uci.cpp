@@ -97,7 +97,7 @@ static int evaluate(const Board& b) {
 
 static int negamax(Board& b, int depth, int alpha, int beta) {
     if (depth == 0) return evaluate(b);
-    auto moves = b.generate_moves();
+    auto moves = b.generate_legal_moves();
     if (moves.empty()) return -100000 + depth; // checkmate or stalemate
     int best = -1000000;
     for (const auto& mv : moves) {
@@ -112,7 +112,7 @@ static int negamax(Board& b, int depth, int alpha, int beta) {
 }
 
 static Board::Move search_best(Board& b) {
-    auto moves = b.generate_moves();
+    auto moves = b.generate_legal_moves();
     if(moves.empty()) return Board::Move{0,0,WP,PIECE_NB,PIECE_NB,false,false};
     Board::Move best = moves[0];
     int bestScore = -1000000;

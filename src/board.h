@@ -40,6 +40,9 @@ public:
     };
 
     std::vector<Move> generate_moves() const;
+    std::vector<Move> generate_legal_moves() const;
+    bool square_attacked(int sq, Color by) const;
+    bool in_check(Color c) const;
     bool make_move(const Move& m);
 
     uint64_t pieceBB(Piece p) const { return bitboards[p]; }
