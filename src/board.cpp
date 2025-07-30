@@ -509,6 +509,9 @@ void init_magics() {
 
 uint64_t bishop_attacks(int sq, uint64_t occ) {
     const Magic& m = bishopMagics[sq];
+    if(m.magic == 0) { // fallback when magic generation failed
+        return sliding_attack(true, sq, occ);
+    }
     uint64_t occMask = occ & m.mask;
     uint64_t idx = (occMask * m.magic) >> m.shift;
     if(idx < m.attacks.size()) return m.attacks[idx];
@@ -517,6 +520,9 @@ uint64_t bishop_attacks(int sq, uint64_t occ) {
 
 uint64_t rook_attacks(int sq, uint64_t occ) {
     const Magic& m = rookMagics[sq];
+    if(m.magic == 0) { // fallback when magic generation failed
+        return sliding_attack(false, sq, occ);
+    }
     uint64_t occMask = occ & m.mask;
     uint64_t idx = (occMask * m.magic) >> m.shift;
     if(idx < m.attacks.size()) return m.attacks[idx];
