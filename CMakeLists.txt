@@ -24,7 +24,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-add_executable(ct2_tests tests/board_tests.cpp)
+file(GLOB TEST_SOURCES tests/*.cpp)
+add_executable(ct2_tests ${TEST_SOURCES})
 target_link_libraries(ct2_tests PRIVATE ct2lib gtest_main)
 
 add_test(NAME ct2_tests COMMAND ct2_tests)
