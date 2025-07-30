@@ -2,6 +2,7 @@
 #include "bitops.h"
 #include <algorithm>
 #include <cctype>
+#include <array>
 
 #include <iostream>
 #include <sstream>
@@ -59,13 +60,55 @@ static std::string move_to_str(const Board::Move& m) {
     return s;
 }
 
-static int evaluate(const Board& b) {
-    static const int val[PIECE_NB] = {100,320,330,500,900,0,-100,-320,-330,-500,-900,0};
-    int score = 0;
-    for(int p=WP; p<PIECE_NB; ++p) {
-        score += popcount64(b.pieceBB((Piece)p)) * val[p];
+static int piece_square(Piece p, int sq) {
+    int f = sq % 8;
+    int r = sq / 8;
+    if (p >= BP) r = 7 - r; // mirror for black pieces
+    switch(p % 6) {
+        case WP: // pawn
+            return r * 10 + (3 - std::abs(3 - f)) * 2;
+        case WN: // knight
+            return 30 - (std::abs(3 - f) + std::abs(3 - r)) * 4;
+        case WB: // bishop
+            return 30 - (std::max(std::abs(3 - f), std::abs(3 - r)) * 3);
+        case WR: // rook
+            return r * 4;
+        case WQ: // queen
+            return 10 - (std::abs(3 - f) + std::abs(3 - r));
+        default: // king
+            return -(std::abs(3 - f) + std::abs(3 - r));
     }
-    return (b.side_to_move()==WHITE?1:-1)*score;
+}
+
+static int evaluate(const Board& b) {
+    static const int valPiece[6] = {100,320,330,500,900,0};
+    int score = 0;
+    for(int p = WP; p < PIECE_NB; ++p) {
+        uint64_t bb = b.pieceBB((Piece)p);
+        int color = (p < BP) ? 1 : -1;
+        while(bb) {
+            int sq = ctz64(bb);
+            bb &= bb - 1;
+            score += color * (valPiece[p % 6] + piece_square((Piece)p, sq));
+        }
+    }
+    return (b.side_to_move() == WHITE ? score : -score);
+}
+
+static int negamax(Board& b, int depth, int alpha, int beta) {
+    if (depth == 0) return evaluate(b);
+    auto moves = b.generate_moves();
+    if (moves.empty()) return -100000 + depth; // checkmate or stalemate
+    int best = -1000000;
+    for (const auto& mv : moves) {
+        Board copy = b;
+        copy.make_move(mv);
+        int score = -negamax(copy, depth - 1, -beta, -alpha);
+        if (score > best) best = score;
+        if (best > alpha) alpha = best;
+        if (alpha >= beta) break;
+    }
+    return best;
 }
 
 static Board::Move search_best(Board& b) {
@@ -76,7 +119,7 @@ static Board::Move search_best(Board& b) {
     for(const auto& mv : moves) {
         Board copy = b;
         copy.make_move(mv);
-        int sc = evaluate(copy);
+        int sc = -negamax(copy, 3, -1000000, 1000000);
         if(sc > bestScore) { bestScore = sc; best = mv; }
     }
     return best;
