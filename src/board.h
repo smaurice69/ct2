@@ -49,6 +49,7 @@ public:
     uint64_t occupancyBB(Color c) const { return occupancies[c]; }
     uint64_t occupancyBB() const { return occupancies[2]; }
     Color side_to_move() const { return side; }
+    int ep_square_sq() const { return ep_square; }
 
 private:
     std::array<uint64_t, PIECE_NB> bitboards{};
