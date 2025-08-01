@@ -31,6 +31,22 @@ static Board::Move parse_move(const std::string& m, const Board& b) {
     mv.promotion = PIECE_NB;
     mv.is_ep = false;
     mv.is_castling = false;
+
+    // Detect castling moves so the rook gets moved correctly
+    if(mv.piece == WK && mv.from == 4 && (mv.to == 6 || mv.to == 2))
+        mv.is_castling = true;
+    else if(mv.piece == BK && mv.from == 60 && (mv.to == 62 || mv.to == 58))
+        mv.is_castling = true;
+
+    // Detect en passant captures
+    if(mv.piece == WP && mv.to == b.ep_square_sq() && (mv.to - mv.from == 7 || mv.to - mv.from == 9)) {
+        mv.is_ep = true;
+        mv.capture = BP;
+    }
+    if(mv.piece == BP && mv.to == b.ep_square_sq() && (mv.from - mv.to == 7 || mv.from - mv.to == 9)) {
+        mv.is_ep = true;
+        mv.capture = WP;
+    }
     if (m.size() > 4) {
         char prom = m[4];
         switch(prom) {
