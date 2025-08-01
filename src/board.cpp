@@ -273,7 +273,9 @@ std::vector<Board::Move> Board::generate_moves() const {
             int from = to + 16;
             moves.push_back({from,to,BP,PIECE_NB,PIECE_NB,false,false});
         }
-        uint64_t captL = ((pawns & ~0x0101010101010101ULL) >> 7) & opp;
+        // Captures to the pawn's left (towards file decrease).
+        // Pawns on the h-file cannot capture left so mask them out.
+        uint64_t captL = ((pawns & ~0x8080808080808080ULL) >> 7) & opp;
         t = captL;
         while (t) {
             int to = pop_lsb(t);
@@ -284,7 +286,9 @@ std::vector<Board::Move> Board::generate_moves() const {
             else
                 moves.push_back({from,to,BP,cap,PIECE_NB,false,false});
         }
-        uint64_t captR = ((pawns & ~0x8080808080808080ULL) >> 9) & opp;
+        // Captures to the pawn's right (towards file increase).
+        // Pawns on the a-file cannot capture right so mask them out.
+        uint64_t captR = ((pawns & ~0x0101010101010101ULL) >> 9) & opp;
         t = captR;
         while (t) {
             int to = pop_lsb(t);
@@ -297,14 +301,16 @@ std::vector<Board::Move> Board::generate_moves() const {
         }
         if (ep_square != -1) {
             uint64_t epBB = 1ULL << ep_square;
-            uint64_t epL = ((pawns & ~0x0101010101010101ULL) >> 7) & epBB;
+            // En passant capture to the left
+            uint64_t epL = ((pawns & ~0x8080808080808080ULL) >> 7) & epBB;
             t = epL;
             while (t) {
                 int to = pop_lsb(t);
                 int from = to + 7;
                 moves.push_back({from,to,BP,WP,PIECE_NB,true,false});
             }
-            uint64_t epR = ((pawns & ~0x8080808080808080ULL) >> 9) & epBB;
+            // En passant capture to the right
+            uint64_t epR = ((pawns & ~0x0101010101010101ULL) >> 9) & epBB;
             t = epR;
             while (t) {
                 int to = pop_lsb(t);

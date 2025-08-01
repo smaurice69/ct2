@@ -15,7 +15,7 @@ TEST(MoveGeneration, StartPositionMoves) {
 
 TEST(MoveGeneration, RandomPositions) {
     init_tables();
-    std::ifstream in("../tests/random_positions.txt");
+    std::ifstream in("tests/random_positions.txt");
     ASSERT_TRUE(in.is_open());
     std::string boardPart, side, castling, ep;
     int halfmove, fullmove;
