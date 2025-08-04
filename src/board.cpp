@@ -28,6 +28,17 @@ inline int char_to_piece(char c) {
     }
 }
 
+bool is_valid_pawn_capture_distance(int from, int to, bool is_white) {
+    int rank_diff = (to / 8) - (from / 8);
+    int file_diff = (to % 8) - (from % 8);
+    
+    if (is_white) {
+        return rank_diff == 1 && (file_diff == 1 || file_diff == -1);
+    } else {
+        return rank_diff == -1 && (file_diff == 1 || file_diff == -1);
+    }
+}
+
 } // namespace
 
 Board::Board() {
@@ -210,22 +221,32 @@ std::vector<Board::Move> Board::generate_moves() const {
         while (t) {
             int to = pop_lsb(t);
             int from = to - 7;
-            Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
-            if (to >= 56)
-                moves.push_back({from,to,WP,cap,WQ,false,false});
-            else
-                moves.push_back({from,to,WP,cap,PIECE_NB,false,false});
+            if (is_valid_pawn_capture_distance(from, to, true)) {
+                Piece cap = PIECE_NB;
+                for(int pc=WP;pc<PIECE_NB;++pc) 
+                    if(bitboards[pc]&(1ULL<<to)) 
+                        cap=(Piece)pc;
+                if (to >= 56)
+                    moves.push_back({from,to,WP,cap,WQ,false,false});
+                else
+                    moves.push_back({from,to,WP,cap,PIECE_NB,false,false});
+            }
         }
         uint64_t captR = ((pawns & ~0x8080808080808080ULL) << 9) & opp;
         t = captR;
         while (t) {
             int to = pop_lsb(t);
             int from = to - 9;
-            Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
-            if (to >= 56)
-                moves.push_back({from,to,WP,cap,WQ,false,false});
-            else
-                moves.push_back({from,to,WP,cap,PIECE_NB,false,false});
+            if (is_valid_pawn_capture_distance(from, to, true)) {
+                Piece cap = PIECE_NB;
+                for(int pc=WP;pc<PIECE_NB;++pc) 
+                    if(bitboards[pc]&(1ULL<<to)) 
+                        cap=(Piece)pc;
+                if (to >= 56)
+                    moves.push_back({from,to,WP,cap,WQ,false,false});
+                else
+                    moves.push_back({from,to,WP,cap,PIECE_NB,false,false});
+            }
         }
         if (ep_square != -1) {
             uint64_t epBB = 1ULL << ep_square;
@@ -280,11 +301,16 @@ std::vector<Board::Move> Board::generate_moves() const {
         while (t) {
             int to = pop_lsb(t);
             int from = to + 7;
-            Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
-            if (to < 8)
-                moves.push_back({from,to,BP,cap,BQ,false,false});
-            else
-                moves.push_back({from,to,BP,cap,PIECE_NB,false,false});
+            if (is_valid_pawn_capture_distance(from, to, false)) {
+                Piece cap = PIECE_NB;
+                for(int pc=WP;pc<PIECE_NB;++pc) 
+                    if(bitboards[pc]&(1ULL<<to)) 
+                        cap=(Piece)pc;
+                if (to < 8)
+                    moves.push_back({from,to,BP,cap,BQ,false,false});
+                else
+                    moves.push_back({from,to,BP,cap,PIECE_NB,false,false});
+            }
         }
         // Captures to the pawn's right (towards file increase).
         // Pawns on the a-file cannot capture right so mask them out.
@@ -293,11 +319,16 @@ std::vector<Board::Move> Board::generate_moves() const {
         while (t) {
             int to = pop_lsb(t);
             int from = to + 9;
-            Piece cap=PIECE_NB; for(int pc=WP;pc<PIECE_NB;++pc) if(bitboards[pc]&(1ULL<<to)) cap=(Piece)pc;
-            if (to < 8)
-                moves.push_back({from,to,BP,cap,BQ,false,false});
-            else
-                moves.push_back({from,to,BP,cap,PIECE_NB,false,false});
+            if (is_valid_pawn_capture_distance(from, to, false)) {
+                Piece cap = PIECE_NB;
+                for(int pc=WP;pc<PIECE_NB;++pc) 
+                    if(bitboards[pc]&(1ULL<<to)) 
+                        cap=(Piece)pc;
+                if (to < 8)
+                    moves.push_back({from,to,BP,cap,BQ,false,false});
+                else
+                    moves.push_back({from,to,BP,cap,PIECE_NB,false,false});
+            }
         }
         if (ep_square != -1) {
             uint64_t epBB = 1ULL << ep_square;
