@@ -4,6 +4,9 @@
 #include <cctype>
 #include <array>
 #include <vector>
+#include <unordered_map>
+#include <random>
+#include "opening_book.h"
 
 #include <iostream>
 #include <sstream>
@@ -11,6 +14,17 @@
 namespace ct2 {
 
 static const int VAL_PIECE[6] = {100,320,330,500,900,0};
+
+struct TTEntry {
+    int depth;
+    int score;
+};
+
+static std::unordered_map<std::string, TTEntry> TT;
+static uint64_t nodes = 0;
+static const int MAX_DEPTH = 6;
+
+static std::mt19937 rng(2024);
 
 static int quiescence(Board& b, int alpha, int beta);
 
@@ -81,6 +95,16 @@ static std::string move_to_str(const Board::Move& m) {
     return s;
 }
 
+static bool get_book_move(const Board& b, Board::Move& out) {
+    auto it = openingBook.find(b.getFEN());
+    if (it == openingBook.end()) return false;
+    const auto& moves = it->second;
+    if (moves.empty()) return false;
+    std::uniform_int_distribution<size_t> dist(0, moves.size() - 1);
+    out = parse_move(moves[dist(rng)], b);
+    return true;
+}
+
 static int piece_square(Piece p, int sq) {
     int f = sq % 8;
     int r = sq / 8;
@@ -124,17 +148,36 @@ static int move_order_score(const Board::Move& mv) {
     return score;
 }
 
+static bool is_quiet(const Board::Move& mv) {
+    return mv.capture == PIECE_NB && mv.promotion == PIECE_NB;
+}
+
+struct SearchResult {
+    Board::Move best;
+    int score;
+};
+
 static int negamax(Board& b, int depth, int alpha, int beta) {
+    nodes++;
     if (depth == 0) {
         return quiescence(b, alpha, beta);
     }
+
+    std::string key = b.getFEN();
+    auto ttIt = TT.find(key);
+    if (ttIt != TT.end() && ttIt->second.depth >= depth)
+        return ttIt->second.score;
+
     auto moves = b.generate_legal_moves();
     if (moves.empty()) return -100000 + depth; // checkmate or stalemate
     std::sort(moves.begin(), moves.end(), [](const Board::Move& a, const Board::Move& b) {
         return move_order_score(a) > move_order_score(b);
     });
+    int eval = 0;
+    if (depth == 1) eval = evaluate(b);
     int best = -1000000;
     for (const auto& mv : moves) {
+        if (depth == 1 && is_quiet(mv) && eval + 200 <= alpha) continue; // futility pruning
         Board copy = b;
         copy.make_move(mv);
         int score = -negamax(copy, depth - 1, -beta, -alpha);
@@ -142,10 +185,12 @@ static int negamax(Board& b, int depth, int alpha, int beta) {
         if (best > alpha) alpha = best;
         if (alpha >= beta) break;
     }
+    TT[key] = {depth, best};
     return best;
 }
 
 static int quiescence(Board& b, int alpha, int beta) {
+    nodes++;
     int stand_pat = evaluate(b);
     if (stand_pat >= beta) return beta;
     if (alpha < stand_pat) alpha = stand_pat;
@@ -164,21 +209,40 @@ static int quiescence(Board& b, int alpha, int beta) {
     return alpha;
 }
 
-static Board::Move search_best(Board& b) {
+static SearchResult search_best(Board& b) {
+    Board::Move bookMove;
+    if (get_book_move(b, bookMove)) {
+        Board copy = b;
+        copy.make_move(bookMove);
+        int sc = evaluate(copy);
+        return {bookMove, sc};
+    }
     auto moves = b.generate_legal_moves();
-    if(moves.empty()) return Board::Move{0,0,WP,PIECE_NB,PIECE_NB,false,false};
+    if (moves.empty()) {
+        int sc = b.in_check(b.side_to_move()) ? -100000 : 0;
+        return {Board::Move{0,0,WP,PIECE_NB,PIECE_NB,false,false}, sc};
+    }
     std::sort(moves.begin(), moves.end(), [](const Board::Move& a, const Board::Move& b) {
         return move_order_score(a) > move_order_score(b);
     });
     Board::Move best = moves[0];
     int bestScore = -1000000;
-    for(const auto& mv : moves) {
-        Board copy = b;
-        copy.make_move(mv);
-        int sc = -negamax(copy, 4, -1000000, 1000000);
-        if(sc > bestScore) { bestScore = sc; best = mv; }
+    for (int depth = 1; depth <= MAX_DEPTH; ++depth) {
+        Board::Move localBest = moves[0];
+        int localBestScore = -1000000;
+        for (const auto& mv : moves) {
+            Board copy = b;
+            copy.make_move(mv);
+            int sc = -negamax(copy, depth - 1, -1000000, 1000000);
+            if (sc > localBestScore) {
+                localBestScore = sc;
+                localBest = mv;
+            }
+        }
+        best = localBest;
+        bestScore = localBestScore;
     }
-    return best;
+    return {best, bestScore};
 }
 
 void uci_loop(Board& board) {
@@ -198,7 +262,7 @@ void uci_loop(Board& board) {
             ss >> word; // position
             if (ss >> word) {
                 if (word == "startpos") {
-                    board.loadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1");
+                    board.loadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
                 } else if (word == "fen") {
                     std::string fen;
                     std::getline(ss, fen);
@@ -215,8 +279,12 @@ void uci_loop(Board& board) {
         } else if (token == "ucinewgame") {
             // nothing
         } else if (token.rfind("go", 0) == 0) {
-            auto best = search_best(board);
-            std::cout << "bestmove " << move_to_str(best) << std::endl;
+            nodes = 0;
+            auto result = search_best(board);
+            std::cout << "info score cp " << result.score
+                      << " depth " << MAX_DEPTH << " nodes " << nodes
+                      << " pv " << move_to_str(result.best) << std::endl;
+            std::cout << "bestmove " << move_to_str(result.best) << std::endl;
         }
     }
 }
