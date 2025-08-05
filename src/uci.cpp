@@ -3,11 +3,16 @@
 #include <algorithm>
 #include <cctype>
 #include <array>
+#include <vector>
 
 #include <iostream>
 #include <sstream>
 
 namespace ct2 {
+
+static const int VAL_PIECE[6] = {100,320,330,500,900,0};
+
+static int quiescence(Board& b, int alpha, int beta);
 
 static int sq_from_str(const std::string& s) {
     return (s[1]-'1')*8 + (s[0]-'a');
@@ -97,7 +102,6 @@ static int piece_square(Piece p, int sq) {
 }
 
 static int evaluate(const Board& b) {
-    static const int valPiece[6] = {100,320,330,500,900,0};
     int score = 0;
     for(int p = WP; p < PIECE_NB; ++p) {
         uint64_t bb = b.pieceBB((Piece)p);
@@ -105,16 +109,30 @@ static int evaluate(const Board& b) {
         while(bb) {
             int sq = ctz64(bb);
             bb &= bb - 1;
-            score += color * (valPiece[p % 6] + piece_square((Piece)p, sq));
+            score += color * (VAL_PIECE[p % 6] + piece_square((Piece)p, sq));
         }
     }
     return (b.side_to_move() == WHITE ? score : -score);
 }
 
+static int move_order_score(const Board::Move& mv) {
+    int score = 0;
+    if (mv.capture != PIECE_NB)
+        score += 10 * VAL_PIECE[mv.capture % 6] - VAL_PIECE[mv.piece % 6];
+    if (mv.promotion != PIECE_NB)
+        score += VAL_PIECE[mv.promotion % 6];
+    return score;
+}
+
 static int negamax(Board& b, int depth, int alpha, int beta) {
-    if (depth == 0) return evaluate(b);
+    if (depth == 0) {
+        return quiescence(b, alpha, beta);
+    }
     auto moves = b.generate_legal_moves();
     if (moves.empty()) return -100000 + depth; // checkmate or stalemate
+    std::sort(moves.begin(), moves.end(), [](const Board::Move& a, const Board::Move& b) {
+        return move_order_score(a) > move_order_score(b);
+    });
     int best = -1000000;
     for (const auto& mv : moves) {
         Board copy = b;
@@ -127,15 +145,37 @@ static int negamax(Board& b, int depth, int alpha, int beta) {
     return best;
 }
 
+static int quiescence(Board& b, int alpha, int beta) {
+    int stand_pat = evaluate(b);
+    if (stand_pat >= beta) return beta;
+    if (alpha < stand_pat) alpha = stand_pat;
+    auto moves = b.generate_legal_moves();
+    std::sort(moves.begin(), moves.end(), [](const Board::Move& a, const Board::Move& b) {
+        return move_order_score(a) > move_order_score(b);
+    });
+    for (const auto& mv : moves) {
+        if (mv.capture == PIECE_NB && mv.promotion == PIECE_NB) continue;
+        Board copy = b;
+        copy.make_move(mv);
+        int score = -quiescence(copy, -beta, -alpha);
+        if (score >= beta) return beta;
+        if (score > alpha) alpha = score;
+    }
+    return alpha;
+}
+
 static Board::Move search_best(Board& b) {
     auto moves = b.generate_legal_moves();
     if(moves.empty()) return Board::Move{0,0,WP,PIECE_NB,PIECE_NB,false,false};
+    std::sort(moves.begin(), moves.end(), [](const Board::Move& a, const Board::Move& b) {
+        return move_order_score(a) > move_order_score(b);
+    });
     Board::Move best = moves[0];
     int bestScore = -1000000;
     for(const auto& mv : moves) {
         Board copy = b;
         copy.make_move(mv);
-        int sc = -negamax(copy, 3, -1000000, 1000000);
+        int sc = -negamax(copy, 4, -1000000, 1000000);
         if(sc > bestScore) { bestScore = sc; best = mv; }
     }
     return best;
