@@ -6,6 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <random>
+
 #include "opening_book.h"
 
 #include <iostream>
@@ -22,9 +23,15 @@ struct TTEntry {
 
 static std::unordered_map<std::string, TTEntry> TT;
 static uint64_t nodes = 0;
+
 static const int MAX_DEPTH = 6;
 
-static std::mt19937 rng(2024);
+static std::unordered_map<std::string, std::vector<std::string>> openingBook = {
+    {"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+     {"e2e4", "d2d4", "c2c4", "g1f3"}}
+};
+
+  static std::mt19937 rng(2024);
 
 static int quiescence(Board& b, int alpha, int beta);
 
@@ -218,10 +225,12 @@ static SearchResult search_best(Board& b) {
         return {bookMove, sc};
     }
     auto moves = b.generate_legal_moves();
+
     if (moves.empty()) {
         int sc = b.in_check(b.side_to_move()) ? -100000 : 0;
         return {Board::Move{0,0,WP,PIECE_NB,PIECE_NB,false,false}, sc};
     }
+
     std::sort(moves.begin(), moves.end(), [](const Board::Move& a, const Board::Move& b) {
         return move_order_score(a) > move_order_score(b);
     });
@@ -282,6 +291,7 @@ void uci_loop(Board& board) {
             nodes = 0;
             auto result = search_best(board);
             std::cout << "info score cp " << result.score
+
                       << " depth " << MAX_DEPTH << " nodes " << nodes
                       << " pv " << move_to_str(result.best) << std::endl;
             std::cout << "bestmove " << move_to_str(result.best) << std::endl;
